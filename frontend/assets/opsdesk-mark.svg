@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" role="img" aria-label="OpsDesk mark">
+<defs>
+ <linearGradient id="g1" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#00C6FF"/><stop offset=".52" stop-color="#5865F2"/><stop offset="1" stop-color="#A855F7"/></linearGradient>
+ <linearGradient id="g2" x1="0" y1="1" x2="1" y2="0"><stop stop-color="#00D4A6"/><stop offset=".55" stop-color="#00A8E8"/><stop offset="1" stop-color="#7C3AED"/></linearGradient>
+ <linearGradient id="g3" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#FFB547"/><stop offset="1" stop-color="#FF5E7E"/></linearGradient>
+ <filter id="glow" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="3" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+</defs>
+<path d="M50 7C56 7 62 10 66 16L91 57C97 67 90 80 78 80H58L69 62H77L52 22L29 62H47L58 80H22C10 80 3 67 9 57L34 16C38 10 44 7 50 7Z" fill="url(#g1)" filter="url(#glow)"/>
+<path d="M22 66L34 45L45 64L35 82C31 89 20 91 13 85C7 80 7 72 11 66Z" fill="url(#g2)"/>
+<path d="M57 64H79C88 64 94 73 90 82C88 88 83 91 76 91H43L53 74H68Z" fill="url(#g3)" opacity=".96"/>
+<circle cx="50" cy="49" r="8" fill="#fff" opacity=".92"/>
+</svg>
