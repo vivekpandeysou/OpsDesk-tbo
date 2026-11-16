@@ -124,16 +124,23 @@ const ago=ts=>{const d=now()-ts;return d<M?'just now':fmtDur(d)+' ago'};
 /* ---------- state + persistence ---------- */
 const KEY='opsdesk.v1.state';
 let S=load();
-// Keep demo accounts current when an older localStorage snapshot already exists.
-[USERS.find(u=>u.id==='e3'),USERS.find(u=>u.id==='e4')].forEach(u=>{
- if(u && !S.users.some(x=>x.id===u.id)) S.users.push(clone(u));
-});
+// Keep demo accounts current when an older snapshot (local or from the server) lacks them.
+function patchUsers(){
+ let added=false;
+ [USERS.find(u=>u.id==='e3'),USERS.find(u=>u.id==='e4')].forEach(u=>{
+  if(u && !S.users.some(x=>x.id===u.id)){S.users.push(clone(u));added=true}
+ });
+ return added;
+}
+patchUsers();
 try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}
 function load(){
  try{const r=localStorage.getItem(KEY);if(r){const s=JSON.parse(r);if(s&&s.v===1)return s}}catch(e){}
  const s=seed();try{localStorage.setItem(KEY,JSON.stringify(s))}catch(e){}return s;
 }
-function save(){try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){toast('Storage nearly full — export and archive old tickets','err')}}
+// save() = browser cache (works offline) + queue the change for the server (see js/sync.js)
+function save(){try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){toast('Storage nearly full — export and archive old tickets','err')}
+ if(window.OpsDeskSync)OpsDeskSync.changed()}
 function tl(t,type,text,by,ts){t.timeline.push({ts:ts||now(),type,text,by:by||'System'})}
 const U=id=>S.users.find(u=>u.id===id);
 const nameOf=id=>id?(U(id)||{name:'—'}).name:'Unassigned';
@@ -537,6 +544,13 @@ function renderApp(){
  ${staff()?`<button class="btn pri" data-act="newTicket">${ic('plus',16)}New ticket</button>`:''}</header><div class="content" id="view"></div></main></div><div id="drawer"></div><div id="modal"></div>`;
  refresh();
 }
+const SYNC_CHIP={
+ online:['','● Synced with server'],
+ offline:['a','● Server unreachable · changes kept, will sync'],
+ error:['r','● Server rejected a change · see console'],
+ local:['a','● Local demo data · server not connected']
+};
+function syncChip(){const s=SYNC_CHIP[window.OpsDeskSync?OpsDeskSync.status():'local']||SYNC_CHIP.local;return `<span class="chip ${s[0]}" id="syncchip">${s[1]}</span>`}
 function sideHTML(){
  const cnt={triage:scope().filter(t=>!t.assigneeId&&!isDone(t)).length,my:ME.role==='Requester'?scope().filter(t=>!isDone(t)).length:S.tickets.filter(t=>t.assigneeId===ME.id&&!isDone(t)).length,esc:S.tickets.filter(t=>t.status==='Escalated').length};
  let out=`<div class="brand"><div class="logo"><img src="assets/opsdesk-mark.svg" alt="OpsDesk logo"></div><div class="bt"><b>OpsDesk</b><small>for TBO Operations</small></div><button class="colbtn" data-act="collapse" title="Collapse / expand sidebar" aria-label="Toggle sidebar">${ic('menu',18)}</button></div><nav class="nav">`;
@@ -546,7 +560,7 @@ function sideHTML(){
   const b=n.badge&&cnt[n.badge]?`<span class="badge ${n.badge==='esc'?'red':''}">${cnt[n.badge]}</span>`:'';
   out+=`<a style="--c:${NAVC[n.id]||'#0F6CBD'}" title="${esc(n.label)}" class="${UI.view===n.id?'on':''}" data-act="nav" data-v="${n.id}"><span class="ico">${ic(n.icon,18)}</span><span class="l">${esc(ME.role==='Requester'&&n.alt?n.alt:n.label)}</span>${b}</a>`;
  });
- out+=`</nav><div class="promo"><b>${ic('spark',16)}OpsDesk Premium</b><p>Travel-aware SLA engine & routing audit are live.</p><span class="chip">● All systems normal</span></div>
+ out+=`</nav><div class="promo"><b>${ic('spark',16)}OpsDesk Premium</b><p>Travel-aware SLA engine & routing audit are live.</p>${syncChip()}</div>
  <div class="me"><span class="avatar" style="background:${ME.color}">${initials(ME.name)}</span><div style="flex:1;min-width:0"><b>${esc(ME.name)}</b><small>${esc(ME.role)}</small></div><button class="btn sm" data-act="logout" title="Sign out" aria-label="Sign out">${ic('logout',15)}</button></div>`;
  return out;
 }
@@ -689,7 +703,7 @@ document.addEventListener('input',e=>{
 });
 document.addEventListener('keydown',e=>{if(e.key==='Escape'){if(UI.modal){UI.modal=null;refresh()}else if(UI.open){UI.open=null;refresh()}}});
 /* realtime-ish: cross-tab sync + SLA clock tick (no re-render while typing) */
-window.addEventListener('storage',e=>{if(e.key===KEY&&e.newValue){try{S=JSON.parse(e.newValue);if(ME)ME=S.users.find(u=>u.id===ME.id)||null;typing()||refresh()}catch(x){}}});
+window.addEventListener('storage',e=>{if(e.key===KEY&&e.newValue){try{S=JSON.parse(e.newValue);if(window.OpsDeskSync)OpsDeskSync.markSynced(S);if(ME)ME=S.users.find(u=>u.id===ME.id)||null;typing()||refresh()}catch(x){}}});
 const typing=()=>{const a=document.activeElement;return a&&/INPUT|TEXTAREA|SELECT/.test(a.tagName)&&a.id!=='q'};
 setInterval(()=>{if(ME&&!UI.modal&&!UI.loading&&!typing())refresh()},30000);
 /* 3D tilt + glare on cards (mouse only) */
@@ -729,4 +743,28 @@ document.addEventListener('mouseleave',()=>{if(tEl){tEl.style.transform='';tEl=n
  else document.addEventListener('DOMContentLoaded',makeControl,{once:true});
 })();
 
-renderApp();if(ME)nav(UI.view);
+/* Start-up: load from the server when there is one, otherwise run on local data (as before). */
+(async()=>{
+ if(window.OpsDeskSync){
+  const st=await OpsDeskSync.start({
+   get:()=>S,
+   // another client changed something: take the server's version
+   adopt:st=>{
+    S=st;if(patchUsers())save();
+    try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}
+    if(UI.open&&!find(UI.open))UI.open=null;
+    if(ME)ME=S.users.find(u=>u.id===ME.id)||null;
+    if(ME&&!typing())refresh();
+   },
+   // connection state changed: update the little status chip in the sidebar
+   status:()=>{const c=$('#syncchip');if(c)c.outerHTML=syncChip()}
+  },S);
+  if(st){
+   S=st;
+   try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}
+   if(patchUsers())save();
+   if(ME)ME=S.users.find(u=>u.id===ME.id)||null;
+  }
+ }
+ renderApp();if(ME)nav(UI.view);
+})();
