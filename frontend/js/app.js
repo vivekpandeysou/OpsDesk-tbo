@@ -260,7 +260,7 @@ const allT=()=>S.tickets.concat(S.archive);
 function linksOf(t){
  return allT().filter(o=>o.id!==t.id).map(o=>{
   const r=[];if(t.tboh&&o.tboh===t.tboh)r.push('Same TBOH');
-  if(o.agencyId===t.agencyId&&o.intent===t.intent)r.push('Same agency + intent');
+  if(t.agencyId&&o.agencyId===t.agencyId&&o.intent===t.intent)r.push('Same agency + intent');
   return {t:o,reasons:r};
  }).filter(x=>x.reasons.length).sort((a,b)=>b.t.created-a.t.created);
 }
@@ -377,7 +377,7 @@ function viewIntent(){const base=S.tickets.filter(t=>!isDone(t));const list=appl
 function viewLinked(){
  const groups={};S.tickets.concat(S.archive).forEach(t=>{if(t.tboh)(groups[t.tboh]=groups[t.tboh]||[]).push(t)});
  const g=Object.entries(groups).filter(([k,v])=>v.length>1&&applyQ(v).length).sort((a,b)=>b[1].length-a[1].length);
- const rep={};S.tickets.forEach(t=>{const k=t.agencyId+'|'+t.intent;(rep[k]=rep[k]||[]).push(t)});
+ const rep={};S.tickets.filter(t=>t.agencyId).forEach(t=>{const k=t.agencyId+'|'+t.intent;(rep[k]=rep[k]||[]).push(t)});
  const r=Object.entries(rep).filter(([k,v])=>v.length>1&&v.some(t=>!t.tboh||!g.find(x=>x[0]===t.tboh))).sort((a,b)=>b[1].length-a[1].length);
  return `<div class="hint" style="margin-bottom:16px">${ic('link')}Linkage is first-class: tickets auto-link by TBOH, and by agency + intent — no third-party app.</div>
  <h3 style="margin:0 0 10px">Same TBOH</h3>${g.length?`<div class="grid g2">${g.map(([k,v])=>{const s=v.slice().sort((a,b)=>a.created-b.created);return `<div class="card"><div class="row"><b style="font-size:16px">${esc(k)}</b><span class="chip r">${v.length} contacts</span><span class="sp"></span><span class="sub">${esc(AG(v[0].agencyId).name)}</span></div>

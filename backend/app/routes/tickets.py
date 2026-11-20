@@ -11,7 +11,7 @@ from typing import Literal
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from ..db import get_conn, transaction
-from ..models.schemas import Priority, Status, StatusPatch, TicketIn
+from ..models.schemas import Priority, Status, StatusPatch, TicketCreate, TicketIn
 from ..services import store
 
 router = APIRouter(prefix="/tickets", tags=["tickets"])
@@ -50,9 +50,10 @@ def get_ticket(ticket_id: str, conn: sqlite3.Connection = Depends(get_conn)):
 
 
 @router.post("", status_code=201)
-def create_ticket(body: TicketIn, conn: sqlite3.Connection = Depends(get_conn)):
-    ticket = body.model_dump()
+def create_ticket(body: TicketCreate, conn: sqlite3.Connection = Depends(get_conn)):
+    """Full ticket, or the slim OpsDesk Pro shape (no id: the server assigns PRO-<n>)."""
     with transaction(conn):
+        ticket = store.complete_ticket(conn, body.model_dump())
         if store.ticket_exists(conn, ticket["id"]):
             raise HTTPException(status_code=409, detail="Ticket id already exists")
         store.upsert_ticket(conn, ticket)

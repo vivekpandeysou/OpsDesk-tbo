@@ -7,7 +7,8 @@ automatic routing, escalations and insights.
 frontend/     the web app (plain HTML/CSS/JS, no build step)
 backend/      FastAPI + SQLite API that stores the data and also serves the frontend
 opsdesk-pro/  the original ticket API and dashboard this backend was extended from
-              (by debipriya-queen, MIT licensed; kept untouched)
+              (by debipriya-queen, MIT licensed). Its dashboard now runs on this backend,
+              see "OpsDesk Pro" below
 ```
 
 ## Run it
@@ -29,6 +30,26 @@ localStorage (`python -m http.server 5500` inside `frontend/`).
 If the server drops mid-session, the app keeps working and sends the changes when
 it comes back.
 
+## OpsDesk Pro
+
+The OpsDesk Pro dashboard is served by the same backend at <http://127.0.0.1:8000/pro/>
+and uses the same API and database as the TBO frontend, so a ticket raised there shows
+up in the TBO frontend (in Triage, within ~5 seconds) and the other way round.
+
+- A ticket sent without an id (`{title, description, priority}`, what the dashboard
+  sends) gets the id `PRO-<n>`, the timestamps and the comments/timeline parts the TBO
+  frontend needs. Priority and status are matched case-insensitively (`open` -> `Open`).
+  Pro tickets have no agency, so Requesters do not see them; staff do.
+- To bring over the tickets already in `opsdesk-pro/opsdesk.db` (id 11 becomes `PRO-11`):
+
+  ```bash
+  cd backend
+  python scripts/import_opsdesk_pro.py      # safe to run again, it skips what is there
+  ```
+
+- The original `opsdesk-pro/Opsdesknew.py` still runs on its own database as before;
+  the dashboard picks the right API from the address it is opened at.
+
 ## API
 
 Interactive docs at <http://127.0.0.1:8000/docs>. Everything is under `/api`.
@@ -36,7 +57,7 @@ Interactive docs at <http://127.0.0.1:8000/docs>. Everything is under `/api`.
 | Method | Route | Purpose |
 |---|---|---|
 | GET | `/tickets` | List tickets. Filters: `status`, `priority`, `agencyId`, `assigneeId`, `archived=false\|true\|all`, `limit`, `offset` |
-| POST | `/tickets` | Create a ticket (409 if the id exists) |
+| POST | `/tickets` | Create a ticket (409 if the id exists). Without an id the server assigns `PRO-<n>` |
 | GET | `/tickets/{id}` | One ticket with comments, timeline, side threads, escalations |
 | PUT | `/tickets/{id}` | Create or replace a ticket |
 | PATCH | `/tickets/{id}` | Change status `{"status": "Resolved", "by": "name"}`; writes a timeline entry. A ticket must be Resolved before it can be Closed |
@@ -44,7 +65,7 @@ Interactive docs at <http://127.0.0.1:8000/docs>. Everything is under `/api`.
 | GET | `/users`, `/users/{id}` | Team members |
 | PUT | `/users/{id}` | Create or update a user (e.g. availability) |
 | GET | `/state` | The whole app state in one call |
-| POST | `/state/seed` | First-time upload of demo data (409 once data exists) |
+| POST | `/state/seed` | First-time upload of demo data (409 once the team exists) |
 | POST | `/sync` | Apply a batch of changes atomically (used by the frontend) |
 | GET | `/revision` | Counter that increases on every write (used for polling) |
 | GET | `/health` | Liveness |

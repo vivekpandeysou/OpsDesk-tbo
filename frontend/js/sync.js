@@ -64,7 +64,8 @@ window.OpsDeskSync=(()=>{
    if(!s.initialized){
     try{
      const r=await call('/state/seed',{method:'POST',body:j(strip(local))},BOOT_TIMEOUT);
-     revision=r.revision;snap=snapshot(local);setStatus('online');return null;
+     // needPull: tickets raised through OpsDesk Pro before this first visit are not in `local`
+     revision=r.revision;snap=snapshot(local);needPull=true;setStatus('online');return null;
     }catch(e){if(e.status!==409)throw e;s=await call('/state',null,BOOT_TIMEOUT)} // someone seeded first
    }
    revision=s.revision;const st=strip(s);snap=snapshot(st);setStatus('online');return st;

@@ -8,15 +8,21 @@ rules on are validated here.
 
 from __future__ import annotations
 
-from typing import Any, Literal
+from typing import Any, Literal, get_args
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 ID_PATTERN = r"^[A-Za-z0-9._-]{1,40}$"
 
 Priority = Literal["Urgent", "High", "Medium", "Low"]
 Status = Literal["New", "Open", "Pending", "Escalated", "Resolved", "Closed"]
 Role = Literal["Agent", "Escalation Manager", "Lead", "Requester"]
+
+
+def match_choice(value: str, choices: tuple[str, ...]) -> str | None:
+    """Case-insensitive match against the allowed values ("open" -> "Open")."""
+    wanted = str(value).strip().lower()
+    return next((c for c in choices if c.lower() == wanted), None)
 
 
 class TicketIn(BaseModel):
@@ -34,6 +40,38 @@ class TicketIn(BaseModel):
     assigneeId: str | None = None
     created: int = Field(ge=0)
     updated: int = Field(ge=0)
+
+
+class TicketCreate(BaseModel):
+    """Body of POST /tickets. Accepts a full ticket (as before) and also the slim
+    OpsDesk Pro shape, `{title, description, priority}`: the id, timestamps and the
+    nested parts the frontend needs are then filled in by the server.
+    Priority and status are matched case-insensitively ("open" -> "Open")."""
+
+    model_config = ConfigDict(extra="allow")
+
+    id: str | None = Field(default=None, pattern=ID_PATTERN)
+    title: str = Field(min_length=1, max_length=200)
+    description: str = Field(default="", max_length=5000)
+    priority: Priority = "Medium"
+    status: Status = "New"
+    agencyId: str | None = None
+    tboh: str = Field(default="", max_length=40)
+    intent: str = Field(default="general", max_length=40)
+    region: str = Field(default="", max_length=60)
+    assigneeId: str | None = None
+    created: int | None = Field(default=None, ge=0)
+    updated: int | None = Field(default=None, ge=0)
+
+    @field_validator("priority", mode="before")
+    @classmethod
+    def _priority(cls, v):
+        return (match_choice(v, get_args(Priority)) or v) if isinstance(v, str) else v
+
+    @field_validator("status", mode="before")
+    @classmethod
+    def _status(cls, v):
+        return (match_choice(v, get_args(Status)) or v) if isinstance(v, str) else v
 
 
 class UserIn(BaseModel):
