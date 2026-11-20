@@ -111,6 +111,7 @@
                             <option value="Low">🟢 Low Priority</option>
                             <option value="Medium" selected>🟡 Medium Priority</option>
                             <option value="High">🔴 High Priority</option>
+                            <option value="Urgent">🚨 Urgent</option>
                         </select>
                     </div>
                     <div class="flex items-end">
@@ -277,8 +278,14 @@
             document.getElementById('themeText').innerText = 'Dark';
         }
 
+        // Served by the TBO backend at /pro/ -> shared API under /api.
+        // Served by the original Opsdesknew.py -> its own /tickets API, as before.
+        const API = location.pathname.startsWith('/pro') ? '/api/tickets' : '/tickets';
+        const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
         async function fetchTickets() {
-            const res = await fetch('/tickets');
+            const res = await fetch(API);
+            if (!res.ok) return;
             const tickets = await res.json();
             const list = document.getElementById('ticketList');
             
@@ -297,7 +304,7 @@
             }
 
             tickets.forEach(ticket => {
-                const priorityColor = ticket.priority === 'High' ? 'bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/30' :
+                const priorityColor = (ticket.priority === 'High' || ticket.priority === 'Urgent') ?'bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/30' :
                                       ticket.priority === 'Medium' ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/30' : 
                                       'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30';
 
@@ -305,18 +312,18 @@
                 div.className = 'border border-slate-200 dark:border-slate-700/70 bg-white dark:bg-slate-900/60 hover:border-indigo-500/50 p-5 rounded-2xl shadow-sm hover:shadow-md transition-all duration-300 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 group';
                 div.innerHTML = `
                     <div class="space-y-2 flex-1">
-                        <h3 class="font-bold text-base group-hover:text-indigo-600 dark:group-hover:text-indigo-300 transition">${ticket.title}</h3>
-                        <p class="text-slate-600 dark:text-slate-300 text-sm leading-relaxed">${ticket.description}</p>
+                        <h3 class="font-bold text-base group-hover:text-indigo-600 dark:group-hover:text-indigo-300 transition">${esc(ticket.title)}</h3>
+                        <p class="text-slate-600 dark:text-slate-300 text-sm leading-relaxed">${esc(ticket.description)}</p>
                         <div class="flex flex-wrap gap-2 pt-1">
                             <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-bold border ${priorityColor}">
-                                ⚡ ${ticket.priority} Priority
+                                ⚡ ${esc(ticket.priority)} Priority
                             </span>
                             <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-bold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30">
-                                🟢 Status: ${ticket.status}
+                                🟢 Status: ${esc(ticket.status)}
                             </span>
                         </div>
                     </div>
-                    <button onclick="deleteTicket(${ticket.id})" class="self-end sm:self-center bg-rose-500/10 hover:bg-rose-500/20 text-rose-600 dark:text-rose-400 border border-rose-500/30 text-xs font-bold px-4 py-2.5 rounded-xl transition-all duration-200 flex items-center gap-1.5 active:scale-95 shadow-sm">
+                    <button onclick="deleteTicket('${esc(ticket.id)}')" class="self-end sm:self-center bg-rose-500/10 hover:bg-rose-500/20 text-rose-600 dark:text-rose-400 border border-rose-500/30 text-xs font-bold px-4 py-2.5 rounded-xl transition-all duration-200 flex items-center gap-1.5 active:scale-95 shadow-sm">
                         <span>🗑️</span> Delete
                     </button>
                 `;
@@ -334,7 +341,7 @@
             const description = document.getElementById('description').value;
             const priority = document.getElementById('priority').value;
 
-            await fetch('/tickets', {
+            await fetch(API, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ title, description, priority, status: 'Open' })
@@ -349,7 +356,7 @@
 
         async function deleteTicket(id) {
             playSound('delete');
-            await fetch(`/tickets/${id}`, { method: 'DELETE' });
+            await fetch(`${API}/${encodeURIComponent(id)}`, { method: 'DELETE' });
             fetchTickets();
         }
     </script>

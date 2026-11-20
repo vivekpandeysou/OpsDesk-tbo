@@ -29,10 +29,11 @@ def get_state(conn: sqlite3.Connection = Depends(get_conn)):
 
 @router.post("/state/seed", status_code=201)
 def seed(body: SeedIn, conn: sqlite3.Connection = Depends(get_conn)):
-    """First start only: the frontend uploads its demo data once. Refused when
-    the database already has data, so it can never overwrite real tickets."""
+    """First start only: the frontend uploads its demo data once. Refused once the
+    team exists, so it can never overwrite real tickets. Tickets raised through
+    OpsDesk Pro before the frontend's first visit (PRO-<n>) do not block it."""
     with transaction(conn):
-        if not store.is_empty(conn):
+        if store.is_initialized(conn):
             raise HTTPException(status_code=409, detail="Database already has data")
         store.seed_state(conn, body.model_dump())
         rev = store.bump_revision(conn)

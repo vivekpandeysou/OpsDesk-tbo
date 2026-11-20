@@ -20,12 +20,18 @@ from .db import init_db, resolve_db_path
 from .routes import state, tickets, users
 
 DEFAULT_FRONTEND = Path(__file__).resolve().parents[2] / "frontend"
+DEFAULT_PRO = Path(__file__).resolve().parents[2] / "opsdesk-pro" / "static"
 MAX_BODY_BYTES = 5_000_000
 
 
-def create_app(db_path: str | os.PathLike | None = None, frontend_dir: str | os.PathLike | None = None) -> FastAPI:
+def create_app(
+    db_path: str | os.PathLike | None = None,
+    frontend_dir: str | os.PathLike | None = None,
+    pro_dir: str | os.PathLike | None = None,
+) -> FastAPI:
     path = resolve_db_path(db_path)
     frontend = Path(frontend_dir or os.environ.get("OPSDESK_FRONTEND_DIR") or DEFAULT_FRONTEND)
+    pro = Path(pro_dir or os.environ.get("OPSDESK_PRO_DIR") or DEFAULT_PRO)
 
     @asynccontextmanager
     async def lifespan(_: FastAPI):
@@ -45,7 +51,11 @@ def create_app(db_path: str | os.PathLike | None = None, frontend_dir: str | os.
     for router in (state.router, tickets.router, users.router):
         app.include_router(router, prefix="/api")
 
-    # Registered last so /api/* always wins over the static files.
+    # The OpsDesk Pro dashboard, on the same API and database as the TBO frontend.
+    if pro.is_dir():
+        app.mount("/pro", StaticFiles(directory=pro, html=True), name="opsdesk-pro")
+
+    # Registered last so /api/* and /pro always win over the frontend's static files.
     if frontend.is_dir():
         app.mount("/", StaticFiles(directory=frontend, html=True), name="frontend")
 

@@ -122,6 +122,45 @@ def upsert_ticket(
     )
 
 
+PRO_PREFIX = "PRO-"
+
+
+def next_pro_id(conn: sqlite3.Connection) -> str:
+    """Id for a ticket raised through OpsDesk Pro. A separate prefix (not TKT-) so it
+    can never collide with ids the frontend hands out from its own counter.
+    Call inside a write transaction."""
+    rows = conn.execute("SELECT id FROM tickets WHERE id LIKE ?", (PRO_PREFIX + "%",)).fetchall()
+    nums = [int(r["id"][len(PRO_PREFIX):]) for r in rows if r["id"][len(PRO_PREFIX):].isdigit()]
+    return f"{PRO_PREFIX}{max(nums, default=0) + 1}"
+
+
+def complete_ticket(conn: sqlite3.Connection, data: dict, by: str = "OpsDesk Pro") -> dict:
+    """Turn a slim ticket (OpsDesk Pro: title, description, priority) into the full
+    document the TBO frontend expects. Anything already present is kept as is, so a
+    full ticket passes through unchanged. Call inside a write transaction."""
+    now = int(time.time() * 1000)
+    ticket = dict(data)
+    if not ticket.get("id"):
+        ticket["id"] = next_pro_id(conn)
+    ticket["created"] = ticket.get("created") or now
+    ticket["updated"] = ticket.get("updated") or ticket["created"]
+    for key, default in (
+        ("prevAssigneeId", None), ("checkin", None), ("lcd", None), ("holiday", False),
+        ("themes", []), ("product", ""), ("routing", None), ("side", []), ("escal", []),
+    ):
+        ticket.setdefault(key, default)
+    ticket.setdefault(
+        "comments",
+        [{"id": f"c{ticket['created']}", "ts": ticket["created"], "by": by, "type": "external",
+          "from": "agency", "text": ticket.get("description", "")}],
+    )
+    ticket.setdefault(
+        "timeline",
+        [{"ts": ticket["created"], "type": "created", "text": f"Ticket created via {by}", "by": by}],
+    )
+    return ticket
+
+
 def delete_ticket(conn: sqlite3.Connection, ticket_id: str) -> bool:
     return conn.execute("DELETE FROM tickets WHERE id = ?", (ticket_id,)).rowcount > 0
 

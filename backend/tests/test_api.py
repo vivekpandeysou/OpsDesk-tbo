@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from conftest import make_seed, make_ticket, make_user
 
 
@@ -223,3 +225,70 @@ def test_api_serves_the_frontend_and_api_routes_win(client):
 def test_oversized_payload_is_refused(client):
     r = client.post("/api/sync", content=b"{}", headers={"content-length": "9000000", "content-type": "application/json"})
     assert r.status_code == 413
+
+
+# ------------------------------------------------------------- OpsDesk Pro link
+
+
+def test_pro_dashboard_ticket_gets_an_id_and_the_full_frontend_shape(client):
+    r = client.post("/api/tickets", json={"title": "Gateway timeout", "description": "502s", "priority": "high", "status": "open"})
+    assert r.status_code == 201
+    t = r.json()["ticket"]
+    assert t["id"] == "PRO-1" and t["priority"] == "High" and t["status"] == "Open"
+    assert t["comments"][0]["text"] == "502s" and t["timeline"][0]["type"] == "created"
+    assert t["side"] == [] and t["escal"] == [] and t["agencyId"] is None and t["created"] == t["updated"]
+    assert client.post("/api/tickets", json={"title": "Second"}).json()["ticket"]["id"] == "PRO-2"
+    assert client.get("/api/tickets/PRO-1").json() == t
+
+
+def test_pro_ticket_shows_up_in_state_and_survives_the_first_seed(client):
+    client.post("/api/tickets", json={"title": "Raised before the frontend ever loaded"})
+    assert client.get("/api/state").json()["initialized"] is False
+    assert client.post("/api/state/seed", json=make_seed()).status_code == 201  # not blocked
+    ids = [t["id"] for t in client.get("/api/state").json()["tickets"]]
+    assert "PRO-1" in ids and "TKT-1001" in ids
+    assert client.post("/api/state/seed", json=make_seed()).status_code == 409  # now it is blocked
+
+
+def test_pro_ticket_can_be_changed_and_deleted_like_any_other(client):
+    client.post("/api/tickets", json={"title": "Fix me"})
+    assert client.patch("/api/tickets/PRO-1", json={"status": "Resolved", "by": "Riya"}).json()["ticket"]["timeline"][-1]["by"] == "Riya"
+    assert client.delete("/api/tickets/PRO-1").status_code == 200
+
+
+def test_pro_dashboard_is_served_at_pro(tmp_path):
+    from app.main import create_app
+    from fastapi.testclient import TestClient
+
+    pro = tmp_path / "pro"
+    pro.mkdir()
+    (pro / "index.html").write_text("<h1>pro dashboard</h1>")
+    with TestClient(create_app(db_path=tmp_path / "x.db", frontend_dir=tmp_path, pro_dir=pro)) as c:
+        assert "pro dashboard" in c.get("/pro/").text
+        assert c.get("/api/health").status_code == 200
+
+
+def test_import_script_copies_legacy_tickets_once(tmp_path):
+    import sqlite3
+    import sys
+
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+    from import_opsdesk_pro import import_tickets
+
+    legacy = tmp_path / "old.db"
+    con = sqlite3.connect(legacy)
+    con.execute("CREATE TABLE tickets (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT, description TEXT, priority TEXT, status TEXT)")
+    con.executemany("INSERT INTO tickets VALUES (?,?,?,?,?)", [(10, "A", "a", "High", "open"), (11, "B", "b", "weird", "stuff")])
+    con.commit()
+    con.close()
+    target = str(tmp_path / "new.db")
+    assert import_tickets(str(legacy), target) == (2, 0)
+    assert import_tickets(str(legacy), target) == (0, 2)  # idempotent
+    from app.db import connect
+    from app.services import store
+
+    conn = connect(target)
+    assert store.get_ticket(conn, "PRO-10")["status"] == "Open"
+    odd = store.get_ticket(conn, "PRO-11")
+    assert odd["priority"] == "Medium" and odd["status"] == "New"
+    assert store.get_revision(conn) == 1
